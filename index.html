@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Pikachu's Pronoun Adventure</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -18,6 +18,7 @@
             align-items: center;
             justify-content: center;
             min-height: 100vh;
+            touch-action: manipulation; /* Prevents double tap zoom */
         }
         canvas {
             background-color: #2d3748;
@@ -121,6 +122,33 @@
         #xp-bar {
              background-image: linear-gradient(to right, #22c55e, #4ade80);
         }
+
+        /* D-Pad Controls */
+        #d-pad-container {
+            margin-top: 1rem;
+            display: grid;
+            grid-template-columns: repeat(3, 60px);
+            grid-template-rows: repeat(3, 60px);
+            gap: 5px;
+            user-select: none; /* Prevents text selection on taps */
+        }
+        .d-pad-btn {
+            background-color: #4a5568;
+            border: 2px solid #718096;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.1s ease;
+        }
+        .d-pad-btn:active {
+            background-color: #a0aec0;
+        }
+        #d-pad-up { grid-column: 2; grid-row: 1; }
+        #d-pad-left { grid-column: 1; grid-row: 2; }
+        #d-pad-right { grid-column: 3; grid-row: 2; }
+        #d-pad-down { grid-column: 2; grid-row: 2; }
+
     </style>
 </head>
 <body>
@@ -142,7 +170,12 @@
             </div>
         </div>
         <canvas id="gameCanvas" width="512" height="384"></canvas>
-        <div class="text-center text-xs mt-2 text-gray-400">Find the Key to unlock the doors!</div>
+        <div id="d-pad-container">
+            <button id="d-pad-up" class="d-pad-btn"><svg class="w-8 h-8 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg></button>
+            <button id="d-pad-left" class="d-pad-btn"><svg class="w-8 h-8 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg></button>
+            <button id="d-pad-down" class="d-pad-btn"><svg class="w-8 h-8 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg></button>
+            <button id="d-pad-right" class="d-pad-btn"><svg class="w-8 h-8 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></button>
+        </div>
     </div>
 
     <div id="quiz-modal" class="quiz-modal hidden">
@@ -179,7 +212,7 @@
         // --- GAME STATE ---
         const gameState = {
             player: { x: 2, y: 2, prevX: 2, prevY: 2, level: 1, xp: 0, evolution: 0, hp: 6, maxHp: 6, },
-            currentLevelNumber: 1, currentLevelData: {}, enemies: [],
+            currentLevelNumber: 1, currentLevelData: {}, enemies: [], clones: [],
             questionIndex: 0,
             playerMoveCount: 0,
             key: { x: -1, y: -1, collected: false },
@@ -187,6 +220,7 @@
             bossState: 'inactive', 
             pillars: [], 
             projectiles: [],
+            attackTelegraphs: [],
         };
         let currentEncounter = { enemy: null, index: -1, isBossFight: false };
 
@@ -204,7 +238,8 @@
             'mountain': { tiles: { 0: "#A0AEC0", 1: "#4A5568", 2: "#718096", 3: "#8B4513", 4: "#3A3F4B", 5: "#1A202C" }, enemies: ['rocky', 'serpent'] },
             'lava':     { tiles: { 0: "#2D3748", 1: "#4A5568", 2: "#E53E3E", 3: "#E53E3E", 4: "#3A3F4B", 5: "#1A202C" }, enemies: ['gassy', 'rocky'] },
             'arctic':   { tiles: { 0: "#EDF2F7", 1: "#A0AEC0", 2: "#BEE3F8", 3: "#EDF2F7", 4: "#3A3F4B", 5: "#1A202C" }, enemies: ['icy', 'rocky'] },
-            'ocean':    { tiles: { 0: "#3182CE", 1: "#2C7A7B", 2: "#63B3ED", 3: "#3182CE", 4: "#3A3F4B", 5: "#1A202C" }, enemies: ['watery', 'pincer'] }
+            'ocean':    { tiles: { 0: "#3182CE", 1: "#2C7A7B", 2: "#63B3ED", 3: "#3182CE", 4: "#3A3F4B", 5: "#1A202C" }, enemies: ['watery', 'pincer'] },
+            'celestial':{ tiles: { 0: "#1A202C", 1: "#4A5568", 2: "#6B46C1", 3: "#FBBF24", 4: "#3A3F4B", 5: "#000000" }, enemies: [] }
         };
         const HAZARD_TILE_ID = 2; const DOOR_TILE_ID = 3; const LOCKED_DOOR_TILE_ID = 4; const PIT_TILE_ID = 5;
 
@@ -243,7 +278,9 @@
             // Boss question 2
             { text: "It was ___ who solved the puzzle.", options: ["she", "her", "herself"], correct: "she", boss: 2 },
             // Boss question 3
-            { text: "Neither the players nor the coach ___ happy.", options: ["was", "were", "is"], correct: "was", boss: 3 }
+            { text: "Neither the players nor the coach ___ happy.", options: ["was", "were", "is"], correct: "was", boss: 3 },
+            // Final boss question 4
+            { text: "This is the Pokemon ___ trainer I met.", options: ["who's", "whose", "who"], correct: "whose", boss: 4 },
         ];
         
         // --- DRAWING FUNCTIONS ---
@@ -255,13 +292,14 @@
             'watery': (e) => { const p=e.x*TILE_SIZE,t=e.y*TILE_SIZE,s=Math.sin(Date.now()/350);ctx.fillStyle='#D6BCFA';ctx.beginPath();ctx.moveTo(p+4,t+12);ctx.lineTo(p+8,t+8);ctx.lineTo(p+10,t+14);ctx.closePath();ctx.fill();ctx.beginPath();ctx.moveTo(p+28,t+12);ctx.lineTo(p+24,t+8);ctx.lineTo(p+22,t+14);ctx.closePath();ctx.fill();ctx.fillStyle='#63B3ED';ctx.beginPath();ctx.ellipse(p+16,t+20,10,8,0,0,7);ctx.fill();ctx.beginPath();ctx.arc(p+16,t+14,9,0,7);ctx.fill();ctx.fillStyle='#2D3748';ctx.beginPath();ctx.arc(p+13,t+14,1.5,0,7);ctx.fill();ctx.beginPath();ctx.arc(p+19,t+14,1.5,0,7);ctx.fill();ctx.strokeStyle='#2D3748';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(p+14,t+18+s);ctx.lineTo(p+18,t+18-s);ctx.stroke();},
             'pincer': (e) => { const p = e.x * TILE_SIZE, t = e.y * TILE_SIZE, sway = Math.sin(Date.now() / 200) * 2; ctx.fillStyle = '#E53E3E'; ctx.beginPath(); ctx.ellipse(p + 16, t + 20, 10, 8, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#FC8181'; ctx.beginPath(); ctx.arc(p + 16, t + 18, 7, 0, 7); ctx.fill(); ctx.fillStyle = '#FFF'; ctx.beginPath(); ctx.arc(p + 13, t + 16, 3, 0, 7); ctx.fill(); ctx.arc(p + 19, t + 16, 3, 0, 7); ctx.fill(); ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(p + 13, t + 16, 1, 0, 7); ctx.fill(); ctx.arc(p + 19, t + 16, 1, 0, 7); ctx.fill(); ctx.strokeStyle = '#E53E3E'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(p + 6, t + 14 + sway); ctx.lineTo(p, t + 10); ctx.stroke(); ctx.beginPath(); ctx.moveTo(p + 26, t + 14 - sway); ctx.lineTo(p + 32, t + 10); ctx.stroke();},
             'boss': (e) => { const isStunned = gameState.bossState.includes('stunned'); const mainColor = isStunned ? '#F7D43B' : '#E2E8F0'; const tailColor = isStunned ? '#F08030' : '#805AD5'; const p=e.x*TILE_SIZE,t=e.y*TILE_SIZE,b=Math.sin(Date.now()/300)*2,y=t+b; ctx.fillStyle="rgba(0,0,0,0.3)"; ctx.beginPath();ctx.ellipse(p+16,t+30,14,5,0,0,7);ctx.fill(); ctx.fillStyle=mainColor; ctx.beginPath();ctx.ellipse(p+16,y+18,8,14,0,0,7);ctx.fill();ctx.beginPath();ctx.moveTo(p+16,y+10);ctx.quadraticCurveTo(p+28,y-4,p+24,y+10);ctx.quadraticCurveTo(p+20,y,p+16,y+10);ctx.fill();ctx.beginPath();ctx.moveTo(p+16,y+10);ctx.quadraticCurveTo(p+4,y-4,p+8,y+10);ctx.quadraticCurveTo(p+12,y,p+16,y+10);ctx.fill(); ctx.fillStyle=tailColor; ctx.beginPath();ctx.ellipse(p+16,y+30,10,4,0,0,7);ctx.fill(); ctx.fillStyle='#C53030';ctx.beginPath();ctx.moveTo(p+12,y+12);ctx.lineTo(p+16,y+16);ctx.lineTo(p+12,y+20);ctx.closePath();ctx.fill();ctx.beginPath();ctx.moveTo(p+20,y+12);ctx.lineTo(p+16,y+16);ctx.lineTo(p+20,y+20);ctx.closePath();ctx.fill();},
+            'mew': (e, alpha=1) => { const p=e.x*TILE_SIZE, t=e.y*TILE_SIZE, b=Math.sin(Date.now()/300)*2, y=t+b; ctx.fillStyle=`rgba(244, 182, 228, ${alpha})`; ctx.beginPath(); ctx.ellipse(p+16, y+28, 5, 12, -0.8, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(p+16, y+16, 9, 10, 0, 0, 7); ctx.fill(); ctx.fillStyle=`rgba(113, 201, 247, ${alpha})`; ctx.beginPath(); ctx.ellipse(p+16, y+16, 3, 4, 0, 0, 7); ctx.fill(); ctx.fillStyle=`rgba(244, 182, 228, ${alpha})`; ctx.beginPath(); ctx.moveTo(p+12,y+4); ctx.quadraticCurveTo(p+2,y-2, p+8, y+8); ctx.fill(); ctx.beginPath(); ctx.moveTo(p+20,y+4); ctx.quadraticCurveTo(p+30,y-2, p+24, y+8); ctx.fill();},
             'minion_bulbasaur': (e) => { const p=e.x*TILE_SIZE,t=e.y*TILE_SIZE;ctx.fillStyle="#48BB78";ctx.beginPath();ctx.ellipse(p+16,t+20,10,8,0,0,7);ctx.fill();ctx.fillStyle="#2F855A";ctx.beginPath();ctx.moveTo(p+16,t+10);ctx.lineTo(p+10,t+18);ctx.lineTo(p+22,t+18);ctx.closePath();ctx.fill();ctx.fillStyle="#C53030";ctx.beginPath();ctx.arc(p+12,t+20,2,0,7);ctx.fill();ctx.arc(p+20,t+20,2,0,7);ctx.fill();},
             'minion_squirtle': (e) => { const p=e.x*TILE_SIZE,t=e.y*TILE_SIZE;ctx.fillStyle="#63B3ED";ctx.beginPath();ctx.arc(p+16,t+18,9,0,7);ctx.fill();ctx.fillStyle="#F7D43B";ctx.beginPath();ctx.ellipse(p+16,t+24,8,5,0,0,7);ctx.fill();ctx.fillStyle="#2D3748";ctx.beginPath();ctx.arc(p+13,t+16,2,0,7);ctx.fill();ctx.arc(p+19,t+16,2,0,7);ctx.fill();},
             'minion_charmander': (e) => { const p=e.x*TILE_SIZE,t=e.y*TILE_SIZE,f=4+Math.sin(Date.now()/100)*2;ctx.fillStyle="#F08030";ctx.beginPath();ctx.ellipse(p+16,t+20,8,10,0,0,7);ctx.fill();ctx.fillStyle="#F7D43B";ctx.beginPath();ctx.ellipse(p+16,t+26,6,4,0,0,7);ctx.fill();ctx.fillStyle="#E53E3E";ctx.beginPath();ctx.moveTo(p+24,t+24-f);ctx.lineTo(p+22,t+24);ctx.lineTo(p+26,t+24);ctx.closePath();ctx.fill();}
         };
 
         function generateLevel(levelNum, entryDir) {
-            const biomeName = biomes[(levelNum - 1) % biomes.length];
+            const biomeName = (levelNum === 10) ? 'celestial' : biomes[(levelNum - 1) % biomes.length];
             const data = { map: Array(MAP_ROWS).fill(0).map(() => Array(MAP_COLS).fill(0)), tiles: biomeData[biomeName].tiles, enemies: [] };
             for (let y=0; y<MAP_ROWS; y++) { for (let x=0; x<MAP_COLS; x++) { if (x==0 || x==MAP_COLS-1 || y==0 || y==MAP_ROWS-1) data.map[y][x] = 1; } }
             
@@ -279,19 +317,25 @@
             }
 
             gameState.heart.active = false;
-            if (levelNum % 5 === 0) {
-                data.enemies.push({ x: midX, y: midY, type: 'boss' });
-                gameState.bossState = 'phase1_active'; gameState.pillars = []; gameState.projectiles = [];
-                const pPos = [{x:3,y:3},{x:MAP_COLS-4,y:3},{x:3,y:MAP_ROWS-4},{x:MAP_COLS-4,y:MAP_ROWS-4}];
+            const pPos = [{x:3,y:3},{x:MAP_COLS-4,y:3},{x:3,y:MAP_ROWS-4},{x:MAP_COLS-4,y:MAP_ROWS-4}];
+
+            if (levelNum === 10) { // Final Boss: Mew
+                data.enemies.push({ x: midX, y: midY, type: 'mew', visible: true });
+                gameState.bossState = 'final_phase1_active'; gameState.pillars = []; gameState.projectiles = []; gameState.clones = [];
                 pPos.forEach(pos => { data.map[pos.y][pos.x] = 0; gameState.pillars.push({x: pos.x, y: pos.y, activated: false}); });
-                gameState.key.collected = true; // No key in boss rooms
-            } else {
+                gameState.key.collected = true; 
+            } else if (levelNum % 5 === 0) { // Mid-Boss: Mewtwo
+                data.enemies.push({ x: midX, y: midY, type: 'boss' });
+                gameState.bossState = 'phase1_active'; gameState.pillars = []; gameState.projectiles = []; gameState.clones = [];
+                pPos.forEach(pos => { data.map[pos.y][pos.x] = 0; gameState.pillars.push({x: pos.x, y: pos.y, activated: false}); });
+                gameState.key.collected = true; 
+            } else { // Regular Level
+                gameState.bossState = 'inactive';
                 for(let i=0; i<15+levelNum; i++) { const x=Math.floor(Math.random()*(MAP_COLS-2))+1, y=Math.floor(Math.random()*(MAP_ROWS-2))+1; if(data.map[y][x]===0) { if(Math.random() < 0.3) { data.map[y][x] = 6 + Math.floor(Math.random() * 4); } else { data.map[y][x]=1; } } }
                 for(let i=0; i<5+levelNum; i++) { const x=Math.floor(Math.random()*(MAP_COLS-2))+1, y=Math.floor(Math.random()*(MAP_ROWS-2))+1; if(data.map[y][x]===0) data.map[y][x]=HAZARD_TILE_ID; }
                 const types = biomeData[biomeName].enemies; const num = 2 + Math.floor(levelNum/2);
                 for(let i=0;i<num;i++) { let x, y; do { x=Math.floor(Math.random()*(MAP_COLS-2))+1; y=Math.floor(Math.random()*(MAP_ROWS-2))+1; } while(data.map[y][x]!==0); data.enemies.push({ x, y, type: types[Math.floor(Math.random()*types.length)] }); }
                 
-                // Place key
                 gameState.key.collected = false;
                 let keyX, keyY;
                 do {
@@ -300,8 +344,7 @@
                 } while (data.map[keyY][keyX] !== 0);
                 gameState.key.x = keyX; gameState.key.y = keyY;
 
-                // Place heart every 2 levels
-                if (levelNum % 2 === 0) {
+                if (levelNum > 1 && levelNum % 2 === 0) {
                     gameState.heart.active = true;
                     let heartX, heartY;
                     do {
@@ -327,11 +370,13 @@
             const x = col * TILE_SIZE; const y = row * TILE_SIZE;
             const floorColor = tiles[0]; const wallColor = tiles[1];
             ctx.fillStyle = floorColor; ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+            if (gameState.currentLevelNumber === 10) { // Starry background for final boss
+                if (Math.random() < 0.01) { ctx.fillStyle = `rgba(255, 255, 255, ${0.2 + Math.random() * 0.5})`; ctx.beginPath(); ctx.arc(x + Math.random() * TILE_SIZE, y + Math.random() * TILE_SIZE, Math.random() * 1.5, 0, 7); ctx.fill(); }
+            }
             
             let color = tiles[tileType] || floorColor;
             
             switch(tileType) {
-                case 0: break;
                 case 1: ctx.fillStyle=wallColor;ctx.fillRect(x,y,TILE_SIZE,TILE_SIZE);ctx.fillStyle="rgba(0,0,0,0.15)";ctx.fillRect(x,y,TILE_SIZE,TILE_SIZE);ctx.strokeStyle="rgba(0,0,0,0.1)";ctx.lineWidth=2;ctx.strokeRect(x+2,y+2,TILE_SIZE-4,TILE_SIZE-4);break;
                 case HAZARD_TILE_ID: ctx.fillStyle=color;ctx.fillRect(x,y,TILE_SIZE,TILE_SIZE);ctx.fillStyle=`rgba(0,0,0,${.1+Math.sin(Date.now()/200+x+y)*.05})`;ctx.beginPath();ctx.arc(x+TILE_SIZE/2,y+TILE_SIZE/2,TILE_SIZE/3,0,7);ctx.fill();break;
                 case DOOR_TILE_ID: case LOCKED_DOOR_TILE_ID: ctx.fillStyle=color;ctx.fillRect(x,y,TILE_SIZE,TILE_SIZE);ctx.fillStyle="rgba(0,0,0,0.2)";ctx.fillRect(x+4,y+4,TILE_SIZE-8,TILE_SIZE-8);break;
@@ -353,36 +398,33 @@
         }
 
         function drawKey() {
-            if (!gameState.key.collected && gameState.currentLevelNumber % 5 !== 0) {
-                const kx = gameState.key.x * TILE_SIZE; const ky = gameState.key.y * TILE_SIZE;
-                const flash = Math.abs(Math.sin(Date.now() / 300));
-                ctx.fillStyle = `rgba(252, 211, 77, ${0.6 + flash * 0.4})`;
-                ctx.beginPath(); ctx.arc(kx + 16, ky + 16, 12, 0, 7); ctx.fill();
-                ctx.fillStyle = "#FBBF24"; ctx.fillRect(kx + 12, ky + 8, 8, 12);
-                ctx.beginPath(); ctx.arc(kx + 16, ky + 10, 5, 0, 7); ctx.fill();
+            if (!gameState.key.collected && !gameState.bossState.includes('phase')) {
+                const kx = gameState.key.x * TILE_SIZE; const ky = gameState.key.y * TILE_SIZE; const flash = Math.abs(Math.sin(Date.now() / 300));
+                ctx.fillStyle = `rgba(252, 211, 77, ${0.6 + flash * 0.4})`; ctx.beginPath(); ctx.arc(kx + 16, ky + 16, 12, 0, 7); ctx.fill();
+                ctx.fillStyle = "#FBBF24"; ctx.fillRect(kx + 12, ky + 8, 8, 12); ctx.beginPath(); ctx.arc(kx + 16, ky + 10, 5, 0, 7); ctx.fill();
                 ctx.fillStyle = "#F59E0B"; ctx.fillRect(kx + 14, ky + 20, 4, 6);
             }
         }
         
         function drawHeart() {
             if (gameState.heart.active) {
-                const hx = gameState.heart.x * TILE_SIZE; const hy = gameState.heart.y * TILE_SIZE;
-                const flash = Math.abs(Math.sin(Date.now() / 250));
-                ctx.fillStyle = `rgba(239, 68, 68, ${0.7 + flash * 0.3})`;
-                ctx.beginPath();
-                ctx.moveTo(hx + 16, hy + 10);
-                ctx.bezierCurveTo(hx + 16, hy + 6, hx + 10, hy + 8, hx + 10, hy + 14);
+                const hx = gameState.heart.x * TILE_SIZE; const hy = gameState.heart.y * TILE_SIZE; const flash = Math.abs(Math.sin(Date.now() / 250));
+                ctx.fillStyle = `rgba(239, 68, 68, ${0.7 + flash * 0.3})`; ctx.beginPath();
+                ctx.moveTo(hx + 16, hy + 10); ctx.bezierCurveTo(hx + 16, hy + 6, hx + 10, hy + 8, hx + 10, hy + 14);
                 ctx.bezierCurveTo(hx + 10, hy + 20, hx + 16, hy + 22, hx + 16, hy + 26);
                 ctx.bezierCurveTo(hx + 16, hy + 22, hx + 22, hy + 20, hx + 22, hy + 14);
-                ctx.bezierCurveTo(hx + 22, hy + 8, hx + 16, hy + 6, hx + 16, hy + 10);
-                ctx.fill();
+                ctx.bezierCurveTo(hx + 22, hy + 8, hx + 16, hy + 6, hx + 16, hy + 10); ctx.fill();
             }
         }
 
-        function drawEnemies() { gameState.enemies.forEach(e => { enemySprites[e.type](e); if(e.type==='boss' && (gameState.bossState.includes('active') || gameState.bossState.includes('minions'))) { const x=e.x*TILE_SIZE, y=e.y*TILE_SIZE; ctx.fillStyle=`rgba(128,90,213,${.4+Math.sin(Date.now()/200)*.2})`; ctx.beginPath(); ctx.arc(x+16,y+16,20,0,7);ctx.fill();}}); }
+        function drawEnemies() {
+            gameState.enemies.forEach(e => { if(e.visible !== false) enemySprites[e.type](e); });
+            gameState.clones.forEach(c => enemySprites['mew'](c, 0.5));
+        }
         
-        function drawPillars() { gameState.pillars.forEach(p => { const x=p.x*TILE_SIZE,y=p.y*TILE_SIZE;ctx.fillStyle='#4A5568';ctx.fillRect(x+8,y+8,16,16);ctx.fillStyle=p.activated?'#F7D43B':'#A0AEC0';ctx.beginPath();ctx.arc(x+16,y+16,6,0,7);ctx.fill();if(p.activated){ctx.fillStyle=`rgba(251,211,141,${.5+Math.sin(Date.now()/150)*.3})`;ctx.beginPath();ctx.arc(x+16,y+16,8,0,7);ctx.fill();}}); }
+        function drawPillars() { (gameState.pillars||[]).forEach(p => { const x=p.x*TILE_SIZE,y=p.y*TILE_SIZE;ctx.fillStyle='#4A5568';ctx.fillRect(x+8,y+8,16,16);ctx.fillStyle=p.activated?'#F7D43B':'#A0AEC0';ctx.beginPath();ctx.arc(x+16,y+16,6,0,7);ctx.fill();if(p.activated){ctx.fillStyle=`rgba(251,211,141,${.5+Math.sin(Date.now()/150)*.3})`;ctx.beginPath();ctx.arc(x+16,y+16,8,0,7);ctx.fill();}}); }
         function drawProjectiles() { gameState.projectiles.forEach(p => { ctx.fillStyle=`rgba(128,90,213,${.8+Math.sin(Date.now()/100)*.2})`; ctx.beginPath();ctx.arc(p.x*TILE_SIZE+16,p.y*TILE_SIZE+16,6,0,7);ctx.fill();}); }
+        function drawTelegraphs() { gameState.attackTelegraphs.forEach(t => { ctx.fillStyle = `rgba(255, 0, 0, ${0.3 + Math.sin(Date.now() / 100) * 0.2})`; if (t.type === 'beam_row') { ctx.fillRect(0, t.pos * TILE_SIZE, canvas.width, TILE_SIZE); } else if (t.type === 'beam_col') { ctx.fillRect(t.pos * TILE_SIZE, 0, TILE_SIZE, canvas.height); } else if (t.type === 'meteor') { ctx.beginPath(); ctx.arc(t.pos.x * TILE_SIZE + 16, t.pos.y * TILE_SIZE + 16, TILE_SIZE / 2, 0, 7); ctx.fill(); } }); }
         
         const heartSVGs={empty:'<svg class="heart" viewBox="0 0 24 24" fill="#4a5568"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>',half:'<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09V21.35z" fill="#ef4444"/><path d="M12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3c-1.74 0-3.41.81-4.5 2.09V21.35z" fill="#4a5568"/>',full:'<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="#ef4444"/>'};
         function updateUI() {
@@ -405,7 +447,13 @@
             quizModal.classList.remove('hidden');
         }
 
-        function startEncounter(enemy, index) { currentEncounter={enemy,index,isBossFight:enemy.type.includes('minion')||enemy.type==='boss'}; presentQuestion(currentEncounter.isBossFight, parseInt(gameState.bossState.charAt(5))); }
+        function startEncounter(enemy, index) {
+            let bossPhase = 0;
+            if (gameState.bossState.startsWith('phase')) bossPhase = parseInt(gameState.bossState.charAt(5));
+            if (gameState.bossState.startsWith('final_phase')) bossPhase = 4;
+            currentEncounter={enemy,index,isBossFight:enemy.type.includes('minion')||enemy.type==='boss'||enemy.type==='mew'}; 
+            presentQuestion(currentEncounter.isBossFight, bossPhase);
+        }
         
         function checkAnswer(isCorrect, correctAnswer) {
             const p=gameState.player;
@@ -413,16 +461,14 @@
             
             if(isCorrect) {
                 showMessage(`Correct!`,1500);
-                if(currentEncounter.isBossFight && currentEncounter.enemy.type === 'boss') {
+                if(currentEncounter.isBossFight && currentEncounter.enemy.type === 'boss') { // Mewtwo
                     if(gameState.bossState === 'phase1_stunned') { gameState.bossState='phase2_minions'; showMessage('Mewtwo summons help!',2500); spawnBossMinions(); gameState.pillars.forEach(p=>p.activated=false);}
-                    else if(gameState.bossState === 'phase2_stunned') { 
-                        gameState.enemies = gameState.enemies.filter(e => !e.type.includes('minion')); // Clear remaining minions
-                        gameState.bossState='phase3_active'; showMessage('Mewtwo is enraged!',2500); gameState.pillars.forEach(p=>p.activated=false);
-                    }
-                    else if(gameState.bossState === 'phase3_stunned') { 
-                        showMessage("Mewtwo Defeated! +500 XP!",3000); addXP(500); p.maxHp+=2;p.hp=p.maxHp; showMessage("You gained a Heart Container!",2500); 
-                        gameState.enemies.splice(currentEncounter.index, 1); gameState.bossState = 'defeated'; unlockDoors();
-                    }
+                    else if(gameState.bossState === 'phase2_stunned') { gameState.enemies = gameState.enemies.filter(e => !e.type.includes('minion')); gameState.bossState='phase3_active'; showMessage('Mewtwo is enraged!',2500); gameState.pillars.forEach(p=>p.activated=false); }
+                    else if(gameState.bossState === 'phase3_stunned') { showMessage("Mewtwo Defeated! +500 XP!",3000); addXP(500); p.maxHp+=2;p.hp=p.maxHp; showMessage("You gained a Heart Container!",2500); gameState.enemies.splice(currentEncounter.index, 1); gameState.bossState = 'defeated'; unlockDoors(); }
+                } else if (currentEncounter.isBossFight && currentEncounter.enemy.type === 'mew') { // Mew
+                    if(gameState.bossState === 'final_phase1_stunned') { gameState.bossState='final_phase2_active'; showMessage('Mew creates illusions!',2500); spawnMewClones(); gameState.pillars.forEach(p=>p.activated=false); }
+                    else if(gameState.bossState === 'final_phase2_stunned') { gameState.bossState='final_phase3_active'; showMessage('Mew gets serious!',2500); gameState.clones = []; }
+                    else if(gameState.bossState === 'final_phase3_stunned') { showMessage("You defeated Mew! You are a Pronoun Master!", 5000); addXP(2000); p.maxHp += 2; p.hp=p.maxHp; gameState.enemies.splice(currentEncounter.index, 1); gameState.bossState = 'game_won'; }
                 } else {
                     const xpGained=currentEncounter.isBossFight?100:30+Math.floor(gameState.questionIndex/questions.length)*10;
                     addXP(xpGained); gameState.enemies.splice(currentEncounter.index,1);
@@ -439,14 +485,23 @@
         function unlockDoors() { const m=gameState.currentLevelData.map; for(let y=0;y<MAP_ROWS;y++)for(let x=0;x<MAP_COLS;x++)if(m[y][x]===LOCKED_DOOR_TILE_ID)m[y][x]=DOOR_TILE_ID; }
 
         function movePlayer(dx, dy) {
-            if(!quizModal.classList.contains('hidden'))return;
+            if(!quizModal.classList.contains('hidden') || gameState.bossState === 'game_won')return;
             const p=gameState.player; p.prevX=p.x;p.prevY=p.y;
             const newX=p.x+dx,newY=p.y+dy;
+
+            const cloneIdx = gameState.clones.findIndex(c => c.x === newX && c.y === newY);
+            if (cloneIdx !== -1) {
+                p.hp -= 2; showMessage("It was a clone!", 1500);
+                gameState.clones.splice(cloneIdx, 1);
+                takeEnemyTurns(); gameLoop(); updateUI();
+                return;
+            }
             
-            const boss = gameState.enemies.find(e=>e.type==='boss');
+            const boss = gameState.enemies.find(e=>e.type==='boss' || e.type === 'mew');
             if(boss && newX === boss.x && newY === boss.y) {
                 if(gameState.bossState.includes('stunned')) { startEncounter(boss, gameState.enemies.indexOf(boss)); } 
-                else if (gameState.bossState.includes('active') || gameState.bossState.includes('minions')) { p.hp -= 3; showMessage("Mewtwo's shield is active! It hurts!", 2000); updateUI(); }
+                else if ((gameState.bossState.includes('active') || gameState.bossState.includes('minions')) && boss.type === 'boss') { p.hp -= 3; showMessage("Mewtwo's shield is active! It hurts!", 2000); updateUI(); }
+                else if(gameState.bossState === 'final_phase2_active' && boss.type === 'mew') { gameState.bossState = 'final_phase2_stunned'; showMessage("You found the real Mew!", 2000); startEncounter(boss, gameState.enemies.indexOf(boss)); }
                 return;
             }
 
@@ -456,39 +511,27 @@
             const map=gameState.currentLevelData.map; const tile=map[newY]?map[newY][newX]:1;
             if(tile===1 || (tile >= 6 && tile <= 9) || tile===LOCKED_DOOR_TILE_ID)return;
 
-            if (tile === PIT_TILE_ID) {
-                p.hp = 0; showMessage("You fell into a pit!", 2000);
-                handlePlayerDefeat(); return;
-            }
+            if (tile === PIT_TILE_ID) { p.hp = 0; showMessage("You fell into a pit!", 2000); handlePlayerDefeat(); return; }
 
             p.x=newX;p.y=newY;
             gameState.playerMoveCount++;
             
-            if (newX === gameState.key.x && newY === gameState.key.y && !gameState.key.collected) {
-                gameState.key.collected = true;
-                unlockDoors();
-                showMessage("Key obtained! The doors are unlocked!", 2500);
-            }
-
-            if (gameState.heart.active && newX === gameState.heart.x && newY === gameState.heart.y) {
-                gameState.heart.active = false;
-                p.hp = Math.min(p.maxHp, p.hp + 2);
-                showMessage("You recovered a heart!", 1500);
-                updateUI();
-            }
-
+            if (newX === gameState.key.x && newY === gameState.key.y && !gameState.key.collected) { gameState.key.collected = true; unlockDoors(); showMessage("Key obtained! The doors are unlocked!", 2500); }
+            if (gameState.heart.active && newX === gameState.heart.x && newY === gameState.heart.y) { gameState.heart.active = false; p.hp = Math.min(p.maxHp, p.hp + 2); showMessage("You recovered a heart!", 1500); updateUI(); }
             if(tile===HAZARD_TILE_ID){p.hp-=1;showMessage("Ouch! Dangerous terrain!",1000);updateUI();}
             if(tile===DOOR_TILE_ID){let dir='n';if(newY===0)dir='s';if(newY===MAP_ROWS-1)dir='n';if(newX===0)dir='e';if(newX===MAP_COLS-1)dir='w';loadLevel(gameState.currentLevelNumber+1,dir);return;}
             
             if(gameState.bossState.includes('phase')) {
                 const pillar=gameState.pillars.find(pil=>pil.x===newX&&pil.y===newY);
-                if(pillar&&!pillar.activated&&(gameState.bossState==='phase1_active'||gameState.bossState==='phase3_active'||gameState.bossState==='phase2_minions')) {
+                if(pillar&&!pillar.activated&&(gameState.bossState.includes('_active') || gameState.bossState === 'phase2_minions')) {
                     pillar.activated=true;showMessage("Pillar activated!",1500);
                     if(gameState.pillars.every(pil=>pil.activated)){
                          if(gameState.bossState==='phase1_active') gameState.bossState='phase1_stunned';
                          else if(gameState.bossState==='phase2_minions') gameState.bossState='phase2_stunned';
                          else if(gameState.bossState==='phase3_active') gameState.bossState='phase3_stunned';
-                         showMessage("Mewtwo is stunned! Its shield is down!",2500); gameState.projectiles=[];
+                         else if(gameState.bossState==='final_phase1_active') gameState.bossState='final_phase1_stunned';
+                         else if(gameState.bossState==='final_phase3_active') gameState.bossState='final_phase3_stunned';
+                         showMessage("The boss is stunned! Its shield is down!",2500); gameState.projectiles=[];
                     }
                 }
             }
@@ -519,22 +562,15 @@
             let queue = [{x: startX, y: startY, path: []}];
             let visited = new Set([`${startX},${startY}`]);
             const map = gameState.currentLevelData.map;
-
             while (queue.length > 0) {
                 let { x, y, path } = queue.shift();
-
-                if (x === targetX && y === targetY) {
-                    return path[0];
-                }
-
-                const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+                if (x === targetX && y === targetY) return path[0];
+                const dirs = [[0,-1],[0,1],[-1,0],[1,0]].sort(()=>Math.random()-0.5);
                 for (const [dx, dy] of dirs) {
-                    const newX = x + dx;
-                    const newY = y + dy;
-
-                    if (newX >= 0 && newX < MAP_COLS && newY >= 0 && newY < MAP_ROWS && !visited.has(`${newX},${newY}`)) {
+                    const newX = x + dx, newY = y + dy;
+                    if (newX>=0&&newX<MAP_COLS&&newY>=0&&newY<MAP_ROWS&&!visited.has(`${newX},${newY}`)) {
                         const tile = map[newY][newX];
-                        if (tile === 0 || (newX === targetX && newY === targetY)) { // Can move on floor or onto target
+                        if (tile === 0 || (newX === targetX && newY === targetY)) {
                              visited.add(`${newX},${newY}`);
                              const newPath = [...path, {x: newX, y: newY}];
                              queue.push({x: newX, y: newY, path: newPath});
@@ -542,7 +578,7 @@
                     }
                 }
             }
-            return null; // No path found
+            return null;
         }
 
         function takeEnemyTurns() {
@@ -552,48 +588,79 @@
             
             for(let i=gameState.enemies.length-1; i>=0; i--){
                 const e = gameState.enemies[i];
-                if(e.type === 'boss') continue;
-
-                const target = p; // Always target the player
-                const nextStep = findPath(e.x, e.y, target.x, target.y);
-
+                if(e.type === 'boss' || e.type === 'mew') continue;
+                const nextStep = findPath(e.x, e.y, p.x, p.y);
                 if (nextStep) {
                     const isOccupied = gameState.enemies.some((other, otherIdx) => i !== otherIdx && other.x === nextStep.x && other.y === nextStep.y);
                     const isPlayer = p.x === nextStep.x && p.y === nextStep.y;
-                    if (!isOccupied && !isPlayer) {
-                        e.x = nextStep.x;
-                        e.y = nextStep.y;
-                    }
+                    if (!isOccupied && !isPlayer) { e.x = nextStep.x; e.y = nextStep.y; }
                 }
             }
+            gameState.clones.forEach(clone => {
+                 let newX = clone.x, newY = clone.y;
+                 const move = Math.random();
+                 if (move < 0.25) newX++; else if (move < 0.5) newX--; else if (move < 0.75) newY++; else newY--;
+                 const tile = gameState.currentLevelData.map[newY] ? gameState.currentLevelData.map[newY][newX] : 1;
+                 if(tile === 0) { clone.x = newX; clone.y = newY; }
+            });
         }
         
         function updateBoss() {
-            const boss=gameState.enemies.find(e=>e.type==='boss'); if(!boss) return;
-            if(gameState.bossState==='phase1_active' && gameState.playerMoveCount > 0 && gameState.playerMoveCount % 4 === 0){ gameState.projectiles.push({x:boss.x,y:boss.y,dx:0,dy:-1},{x:boss.x,y:boss.y,dx:0,dy:1},{x:boss.x,y:boss.y,dx:-1,dy:0},{x:boss.x,y:boss.y,dx:1,dy:0}); }
-            if(gameState.bossState==='phase3_active'){
-                const possibleTiles=[];
-                const pillarLocs = new Set(gameState.pillars.map(p => `${p.x},${p.y}`));
-                for(let y=1;y<MAP_ROWS-1;y++) {
-                    for(let x=1;x<MAP_COLS-1;x++){
-                        if(gameState.currentLevelData.map[y][x]===0 && !pillarLocs.has(`${x},${y}`)) {
-                            possibleTiles.push({x,y});
-                        }
-                    }
+            const boss = gameState.enemies.find(e => e.type === 'boss' || e.type === 'mew'); if (!boss) return;
+            gameState.attackTelegraphs = []; // Clear previous telegraphs
+
+            if (boss.type === 'boss') { // Mewtwo Logic
+                if(gameState.bossState==='phase1_active' && gameState.playerMoveCount > 0 && gameState.playerMoveCount % 4 === 0){ gameState.projectiles.push({x:boss.x,y:boss.y,dx:0,dy:-1},{x:boss.x,y:boss.y,dx:0,dy:1},{x:boss.x,y:boss.y,dx:-1,dy:0},{x:boss.x,y:boss.y,dx:1,dy:0}); }
+                if(gameState.bossState==='phase3_active'){
+                    const possibleTiles=[]; const pillarLocs = new Set(gameState.pillars.map(p => `${p.x},${p.y}`));
+                    for(let y=1;y<MAP_ROWS-1;y++)for(let x=1;x<MAP_COLS-1;x++)if(gameState.currentLevelData.map[y][x]===0&&!pillarLocs.has(`${x},${y}`))possibleTiles.push({x,y});
+                    if(possibleTiles.length > 5){const tile=possibleTiles[Math.floor(Math.random()*possibleTiles.length)];gameState.currentLevelData.map[tile.y][tile.x]=PIT_TILE_ID;}
                 }
-                if(possibleTiles.length > 5){
-                    const tileToDestroy=possibleTiles[Math.floor(Math.random()*possibleTiles.length)];
-                    gameState.currentLevelData.map[tileToDestroy.y][tileToDestroy.x]=PIT_TILE_ID;
+            } else if (boss.type === 'mew') { // Mew Logic
+                if (gameState.bossState === 'final_phase1_active' && gameState.playerMoveCount % 2 === 0) {
+                    boss.visible = false;
+                    let newX, newY;
+                    do { newX = Math.floor(Math.random()*(MAP_COLS-2))+1; newY = Math.floor(Math.random()*(MAP_ROWS-2))+1; } while(gameState.currentLevelData.map[newY][newX] !== 0);
+                    boss.x = newX; boss.y = newY;
+                    gameState.attackTelegraphs.push({type: 'beam_row', pos: newY}); gameState.attackTelegraphs.push({type: 'beam_col', pos: newX});
+                } else if(gameState.bossState === 'final_phase1_active') { boss.visible = true; }
+
+                if (gameState.bossState === 'final_phase3_active' && gameState.playerMoveCount > 0 && gameState.playerMoveCount % 3 === 0) {
+                     const attackType = Math.random();
+                     if (attackType < 0.4) { // Solar Beam
+                        if(Math.random() < 0.5) gameState.attackTelegraphs.push({ type: 'beam_row', pos: Math.floor(Math.random()*MAP_ROWS) });
+                        else gameState.attackTelegraphs.push({ type: 'beam_col', pos: Math.floor(Math.random()*MAP_COLS) });
+                     } else if (attackType < 0.8) { // Meteor Shower
+                        for(let i = 0; i < 3; i++) {
+                            let x, y; do { x = Math.floor(Math.random()*(MAP_COLS-2))+1; y = Math.floor(Math.random()*(MAP_ROWS-2))+1; } while(gameState.currentLevelData.map[y][x] !== 0);
+                            gameState.attackTelegraphs.push({ type: 'meteor', pos: {x, y} });
+                        }
+                     } else { // Psychic Orb
+                        gameState.projectiles.push({x:boss.x, y:boss.y, dx: Math.sign(gameState.player.x - boss.x), dy: Math.sign(gameState.player.y - boss.y)});
+                     }
+                } else if(gameState.bossState === 'final_phase3_active') {
+                    // This is the turn where the attack happens
+                    gameState.attackTelegraphs.forEach(t => {
+                        if (t.type === 'beam_row' && t.pos === gameState.player.y) { gameState.player.hp = 0; }
+                        else if (t.type === 'beam_col' && t.pos === gameState.player.x) { gameState.player.hp = 0; }
+                        else if (t.type === 'meteor' && t.pos.x === gameState.player.x && t.pos.y === gameState.player.y) { gameState.player.hp = 0; }
+                        if(t.type === 'meteor') gameState.currentLevelData.map[t.pos.y][t.pos.x] = PIT_TILE_ID;
+                    });
+                    if (gameState.player.hp <= 0) { showMessage("Obliterated!", 2000); handlePlayerDefeat(); }
                 }
             }
         }
         
-        function spawnBossMinions() {
-            const positions=[{x:3,y:5},{x:MAP_COLS-4,y:5},{x:3,y:MAP_ROWS-6}];
-            const types=['minion_bulbasaur','minion_squirtle','minion_charmander'];
-            positions.forEach((pos,i)=>{gameState.enemies.push({x:pos.x,y:pos.y,type:types[i]});});
-        }
+        function spawnBossMinions() { const pos=[{x:3,y:5},{x:MAP_COLS-4,y:5},{x:3,y:MAP_ROWS-6}]; const types=['minion_bulbasaur','minion_squirtle','minion_charmander']; pos.forEach((p,i)=>{gameState.enemies.push({x:p.x,y:p.y,type:types[i]});}); }
+        function spawnMewClones() { for(let i=0; i<3; i++) { let x,y; do { x=Math.floor(Math.random()*(MAP_COLS-2))+1; y=Math.floor(Math.random()*(MAP_ROWS-2))+1; } while(gameState.currentLevelData.map[y][x] !== 0); gameState.clones.push({x,y}); } }
         
+        // D-Pad Event Listeners
+        document.getElementById('d-pad-up').addEventListener('click', () => movePlayer(0, -1));
+        document.getElementById('d-pad-left').addEventListener('click', () => movePlayer(-1, 0));
+        document.getElementById('d-pad-down').addEventListener('click', () => movePlayer(0, 1));
+        document.getElementById('d-pad-right').addEventListener('click', () => movePlayer(1, 0));
+
+
         document.addEventListener('keydown', (e) => {
             switch(e.key) {
                 case 'ArrowUp': movePlayer(0,-1); break;
@@ -608,10 +675,11 @@
             drawMap(); 
             drawKey();
             drawHeart();
-            if(gameState.currentLevelNumber%5===0)drawPillars();
+            if(gameState.currentLevelNumber%5===0 || gameState.currentLevelNumber===10)drawPillars();
             drawEnemies(); 
             drawPlayer();
             drawProjectiles();
+            drawTelegraphs();
         }
 
         // --- INITIALIZATION ---
